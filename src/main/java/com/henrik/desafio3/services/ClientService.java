@@ -1,16 +1,20 @@
 package com.henrik.desafio3.services;
 
-import java.util.Optional;
-
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.henrik.desafio3.dto.ClientDTO;
 import com.henrik.desafio3.entities.Client;
 import com.henrik.desafio3.repositories.ClientRepository;
+import com.henrik.desafio3.services.exceptions.DatabaseException;
+import com.henrik.desafio3.services.exceptions.ResourceNotFoundException;
+
+import jakarta.persistence.EntityNotFoundException;
 
 @Service
 public class ClientService {
@@ -19,11 +23,10 @@ public class ClientService {
 	private ClientRepository repository;
 	
 	@Transactional(readOnly = true)
-	public ClientDTO findById (Long id) {
-		Optional<Client> result = repository.findById(id);
-		Client client = result.get();
-		ClientDTO dto = new ClientDTO(client);
-		return dto;
+	public ClientDTO findById(Long id) {
+		Client client = repository.findById(id).orElseThrow(
+				() -> new ResourceNotFoundException("Recurso não encontrado"));		
+		return new ClientDTO(client);
 	}
 	
 	@Transactional(readOnly = true)
@@ -42,15 +45,29 @@ public class ClientService {
 	
 	@Transactional
 	public ClientDTO update(Long id, ClientDTO dto) {
-		Client entity = repository.getReferenceById(id);		
-		copyDTOToEntity(dto, entity);		
-		entity = repository.save(entity);		
-		return new ClientDTO(entity);
+		try {
+			Client entity = repository.getReferenceById(id);		
+			copyDTOToEntity(dto, entity);		
+			entity = repository.save(entity);		
+			return new ClientDTO(entity);
+			
+		} catch (EntityNotFoundException e) {
+			throw new ResourceNotFoundException("Recurso não encontrado");
+		}
+		
 	}
 	
-	@Transactional
+	@Transactional(propagation = Propagation.SUPPORTS)
 	public void delete(Long id) {
-		repository.deleteById(id);		
+		if (!repository.existsById(id)) {
+			throw new ResourceNotFoundException("Recurso não encontrado");
+		}
+		try {
+	        	repository.deleteById(id);    		
+		}
+	    	catch (DataIntegrityViolationException e) {
+	        	throw new DatabaseException("Falha de integridade referencial");
+	   	}
 	}
 
 	private void copyDTOToEntity(ClientDTO dto, Client entity) {
